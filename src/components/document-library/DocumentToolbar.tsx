@@ -41,6 +41,7 @@ interface DocumentToolbarProps {
   onSortFieldChange: (field: SortField) => void;
   onToggleSortDirection: () => void;
   allUniqueTags: string[];
+  tagCounts?: Record<string, number>;
   allUniqueOrigins: string[];
   allUniqueYears: string[];
   categoryCounts: Record<string, number>;
@@ -65,6 +66,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
   onSortFieldChange,
   onToggleSortDirection,
   allUniqueTags,
+  tagCounts,
   allUniqueOrigins,
   allUniqueYears,
   categoryCounts,
@@ -75,13 +77,61 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
   showFilterDrawer,
   onToggleFilterDrawer,
 }) => {
+  const [tagSearchQuery, setTagSearchQuery] = React.useState('');
+
+  const activeTags = React.useMemo(() => {
+    if (filters.selectedTags && filters.selectedTags.length > 0) {
+      return filters.selectedTags;
+    }
+    if (filters.tag) {
+      return [filters.tag];
+    }
+    return [];
+  }, [filters.selectedTags, filters.tag]);
+
   const isFiltered = 
     filters.search.trim() !== '' || 
     filters.category !== 'All' || 
     filters.weight !== 'All' || 
-    filters.tag !== null || 
+    activeTags.length > 0 || 
     filters.origin !== 'All' || 
     filters.year !== 'All';
+
+  const handleToggleTag = (tag: string) => {
+    const current = filters.selectedTags || (filters.tag ? [filters.tag] : []);
+    const exists = current.some(t => t.toLowerCase() === tag.toLowerCase());
+    let next: string[];
+    if (exists) {
+      next = current.filter(t => t.toLowerCase() !== tag.toLowerCase());
+    } else {
+      next = [...current, tag];
+    }
+    onFilterChange({
+      selectedTags: next,
+      tag: next.length > 0 ? next[0] : null
+    });
+  };
+
+  const handleRemoveActiveTag = (tagToRemove: string) => {
+    const current = filters.selectedTags || (filters.tag ? [filters.tag] : []);
+    const next = current.filter(t => t.toLowerCase() !== tagToRemove.toLowerCase());
+    onFilterChange({
+      selectedTags: next,
+      tag: next.length > 0 ? next[0] : null
+    });
+  };
+
+  const handleClearAllTags = () => {
+    onFilterChange({
+      selectedTags: [],
+      tag: null
+    });
+  };
+
+  const displayedTags = React.useMemo(() => {
+    if (!tagSearchQuery.trim()) return allUniqueTags;
+    return allUniqueTags.filter(t => t.toLowerCase().includes(tagSearchQuery.toLowerCase()));
+  }, [allUniqueTags, tagSearchQuery]);
 
   const categories = [
     'All',
@@ -311,6 +361,73 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
         )}
       </div>
 
+      {/* Active Tags Filter Ribbon */}
+      {activeTags.length > 0 && (
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap bg-amber-50/60 p-2.5 rounded-xl border border-amber-200">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1 text-[11px] font-bold text-amber-900 mr-1">
+              <Tag className="w-3.5 h-3.5 text-amber-600" />
+              <span>Filtered by Tag{activeTags.length === 1 ? '' : 's'} ({activeTags.length}):</span>
+            </div>
+            {activeTags.map(tag => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-amber-300 text-amber-950 font-semibold text-[11px] shadow-2xs"
+              >
+                <span>#{tag}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveActiveTag(tag)}
+                  className="p-0.5 rounded text-amber-700 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
+                  title={`Remove #${tag} filter`}
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </span>
+            ))}
+            
+            {activeTags.length > 1 && (
+              <div className="flex items-center gap-1 ml-2 text-[10px] text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                <span className="font-medium">Match:</span>
+                <button
+                  type="button"
+                  onClick={() => onFilterChange({ tagFilterMode: 'any' })}
+                  className={`px-1.5 py-0.2 rounded font-medium cursor-pointer ${
+                    (filters.tagFilterMode || 'any') === 'any'
+                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Show documents that match at least one selected tag"
+                >
+                  ANY
+                </button>
+                <span>/</span>
+                <button
+                  type="button"
+                  onClick={() => onFilterChange({ tagFilterMode: 'all' })}
+                  className={`px-1.5 py-0.2 rounded font-medium cursor-pointer ${
+                    filters.tagFilterMode === 'all'
+                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                  title="Show documents that match all selected tags"
+                >
+                  ALL
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleClearAllTags}
+            className="text-[11px] text-amber-800 hover:text-rose-700 font-semibold underline cursor-pointer"
+          >
+            Clear Tags
+          </button>
+        </div>
+      )}
+
       {/* Expandable Advanced Filter Drawer (Origin, Year, Weight, Tags) */}
       {showFilterDrawer && (
         <div className="pt-3 border-t border-slate-200 space-y-3 bg-slate-50 p-3.5 rounded-xl border text-xs animate-in fade-in slide-in-from-top-2 duration-150">
@@ -370,35 +487,58 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
 
           {/* Tags row */}
           {allUniqueTags.length > 0 && (
-            <div className="pt-2 border-t border-slate-200">
-              <div className="flex items-center gap-1.5 mb-1.5 text-slate-500 font-bold text-[10px] uppercase tracking-wider">
-                <Tag className="w-3 h-3 text-amber-500" />
-                <span>Filter by Specific Legal Tag:</span>
-                {filters.tag && (
-                  <button
-                    type="button"
-                    onClick={() => onFilterChange({ tag: null })}
-                    className="ml-auto text-[10px] text-slate-500 hover:text-slate-800 underline"
-                  >
-                    Clear Tag (#{filters.tag})
-                  </button>
-                )}
+            <div className="pt-2 border-t border-slate-200 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 text-slate-700 font-bold text-[10px] uppercase tracking-wider">
+                  <Tag className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Filter by Metadata Tag ({displayedTags.length}):</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {/* Tag quick search */}
+                  <input
+                    type="text"
+                    value={tagSearchQuery}
+                    onChange={(e) => setTagSearchQuery(e.target.value)}
+                    placeholder="Find tag..."
+                    className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-[10px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                  />
+                  {activeTags.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllTags}
+                      className="text-[10px] text-slate-500 hover:text-rose-600 underline cursor-pointer"
+                    >
+                      Clear ({activeTags.length})
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1">
-                {allUniqueTags.map(t => {
-                  const isSelected = filters.tag === t;
+
+              <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto p-0.5">
+                {displayedTags.map(t => {
+                  const isSelected = activeTags.some(curr => curr.toLowerCase() === t.toLowerCase());
+                  const count = tagCounts ? tagCounts[t] : undefined;
                   return (
                     <button
                       key={t}
                       type="button"
-                      onClick={() => onFilterChange({ tag: isSelected ? null : t })}
-                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition ${
+                      onClick={() => handleToggleTag(t)}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-medium transition flex items-center gap-1 border cursor-pointer ${
                         isSelected
-                          ? 'bg-amber-500 text-slate-950 font-bold shadow-2xs'
-                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-amber-50 hover:text-amber-900'
+                          ? 'bg-amber-500 text-slate-950 border-amber-600 font-bold shadow-2xs'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-amber-50 hover:text-amber-900 hover:border-amber-200'
                       }`}
+                      title={isSelected ? `Unselect tag #${t}` : `Filter by tag #${t}`}
                     >
-                      #{t}
+                      <span>#{t}</span>
+                      {count !== undefined && (
+                        <span className={`text-[9px] px-1 py-0.2 rounded-full font-mono ${
+                          isSelected ? 'bg-amber-600 text-slate-950 font-bold' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {count}
+                        </span>
+                      )}
                     </button>
                   );
                 })}

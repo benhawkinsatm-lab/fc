@@ -18,7 +18,11 @@ import {
   Search,
   CheckCircle2,
   Layers,
-  ChevronRight
+  ChevronRight,
+  ScanLine,
+  Plus,
+  X,
+  Trash2
 } from 'lucide-react';
 import { DocumentRecord, DocumentCategory } from '../../types';
 
@@ -28,6 +32,10 @@ interface DocumentSplitViewProps {
   onToggleSelectDoc: (id: string) => void;
   onViewDocument: (doc: DocumentRecord) => void;
   onTagClick?: (tag: string) => void;
+  onManageDocTags?: (doc: DocumentRecord) => void;
+  onAddTagToDoc?: (docId: string, tag: string) => void;
+  onRemoveTagFromDoc?: (docId: string, tag: string) => void;
+  onDeleteDocument?: (doc: DocumentRecord) => void;
 }
 
 export const DocumentSplitView: React.FC<DocumentSplitViewProps> = ({
@@ -36,11 +44,17 @@ export const DocumentSplitView: React.FC<DocumentSplitViewProps> = ({
   onToggleSelectDoc,
   onViewDocument,
   onTagClick,
+  onManageDocTags,
+  onAddTagToDoc,
+  onRemoveTagFromDoc,
+  onDeleteDocument,
 }) => {
   const [activeDocId, setActiveDocId] = useState<string>(documents[0]?.id || '');
   const [listSearch, setListSearch] = useState('');
   const [copiedCitation, setCopiedCitation] = useState(false);
   const [copiedExcerpt, setCopiedExcerpt] = useState(false);
+  const [isAddingInlineTag, setIsAddingInlineTag] = useState(false);
+  const [inlineTagInput, setInlineTagInput] = useState('');
 
   // If documents changes or activeDocId not in list, fallback to first
   useEffect(() => {
@@ -263,6 +277,19 @@ export const DocumentSplitView: React.FC<DocumentSplitViewProps> = ({
                   <Maximize2 className="w-3.5 h-3.5" />
                   <span>Full Record</span>
                 </button>
+
+                {onDeleteDocument && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteDocument(activeDoc)}
+                    className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                    title="Delete document from vault"
+                    id="split-view-delete-doc-btn"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Delete</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -287,30 +314,128 @@ export const DocumentSplitView: React.FC<DocumentSplitViewProps> = ({
               </div>
 
               {/* Tags */}
-              {activeDoc.tags && activeDoc.tags.length > 0 && (
-                <div className="space-y-1">
+              <div className="space-y-1.5 pt-1">
+                <div className="flex items-center justify-between">
                   <span className="text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                    Legal Schema Tags:
+                    Legal Schema &amp; Custom Tags ({activeDoc.tags?.length || 0}):
                   </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {activeDoc.tags.map(t => (
+                  {onManageDocTags && (
+                    <button
+                      type="button"
+                      onClick={() => onManageDocTags(activeDoc)}
+                      className="text-[10px] font-bold text-amber-700 hover:text-amber-900 flex items-center gap-1 hover:underline cursor-pointer"
+                      id="split-view-manage-tags-btn"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Manage All Tags</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {activeDoc.tags && activeDoc.tags.map(t => (
+                    <span
+                      key={t}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-950 text-[11px] font-semibold border border-amber-200 shadow-2xs group"
+                    >
                       <button
-                        key={t}
                         type="button"
                         onClick={() => onTagClick?.(t)}
-                        className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[11px] font-medium border border-slate-200 hover:bg-amber-100 hover:text-amber-900 transition"
+                        className="hover:text-indigo-600 transition cursor-pointer"
+                        title={`Filter library by tag #${t}`}
                       >
                         #{t}
                       </button>
-                    ))}
-                  </div>
+                      {onRemoveTagFromDoc && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveTagFromDoc(activeDoc.id, t)}
+                          className="p-0.5 rounded text-amber-600 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                          title={`Remove tag #${t} from document`}
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+
+                  {/* Inline quick add tag */}
+                  {isAddingInlineTag ? (
+                    <div className="inline-flex items-center gap-1 bg-white border border-amber-400 rounded-lg p-0.5 shadow-2xs">
+                      <span className="text-slate-400 font-mono text-[10px] pl-1">#</span>
+                      <input
+                        type="text"
+                        autoFocus
+                        value={inlineTagInput}
+                        onChange={(e) => setInlineTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (inlineTagInput.trim() && onAddTagToDoc) {
+                              onAddTagToDoc(activeDoc.id, inlineTagInput.trim());
+                              setInlineTagInput('');
+                              setIsAddingInlineTag(false);
+                            }
+                          } else if (e.key === 'Escape') {
+                            setIsAddingInlineTag(false);
+                            setInlineTagInput('');
+                          }
+                        }}
+                        placeholder="Tag name..."
+                        className="w-24 text-[11px] py-0.5 px-1 bg-transparent focus:outline-none text-slate-900"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (inlineTagInput.trim() && onAddTagToDoc) {
+                            onAddTagToDoc(activeDoc.id, inlineTagInput.trim());
+                            setInlineTagInput('');
+                            setIsAddingInlineTag(false);
+                          }
+                        }}
+                        className="px-1.5 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded text-[10px] font-bold cursor-pointer"
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingInlineTag(false);
+                          setInlineTagInput('');
+                        }}
+                        className="p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    onAddTagToDoc && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingInlineTag(true)}
+                        className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-900 text-[11px] font-medium border border-dashed border-slate-300 hover:border-amber-300 transition flex items-center gap-1 cursor-pointer"
+                        title="Add a custom metadata tag to this document"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Tag</span>
+                      </button>
+                    )
+                  )}
                 </div>
-              )}
+              </div>
 
               {/* Full Text / Document Reader */}
               <div className="space-y-1.5 pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                  <span>Transcript / Document OCR Content</span>
+                  <div className="flex items-center gap-1.5">
+                    <span>Transcript / Document OCR Content</span>
+                    {activeDoc.metadata?.ocrEngine && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-300 font-mono text-[9px] font-bold normal-case">
+                        <ScanLine className="w-2.5 h-2.5" />
+                        <span>{activeDoc.metadata.ocrEngine} ({activeDoc.metadata.ocrConfidence}% conf)</span>
+                      </span>
+                    )}
+                  </div>
                   <span className="font-mono text-slate-400 text-[10px]">
                     {activeDoc.fullText?.length || 0} characters
                   </span>

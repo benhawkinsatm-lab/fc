@@ -10,7 +10,9 @@ import {
   Scale, 
   MessageSquare, 
   Receipt, 
-  Trophy 
+  Trophy,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { DocumentRecord, DocumentCategory } from '../../types';
 import { DisplayDensity } from './types';
@@ -21,6 +23,8 @@ interface DocumentGridViewProps {
   onToggleSelectDoc: (id: string) => void;
   onViewDocument: (doc: DocumentRecord) => void;
   onTagClick?: (tag: string) => void;
+  onManageDocTags?: (doc: DocumentRecord) => void;
+  onDeleteDocument?: (doc: DocumentRecord) => void;
   density: DisplayDensity;
 }
 
@@ -30,6 +34,8 @@ export const DocumentGridView: React.FC<DocumentGridViewProps> = ({
   onToggleSelectDoc,
   onViewDocument,
   onTagClick,
+  onManageDocTags,
+  onDeleteDocument,
   density,
 }) => {
   const [copiedDocId, setCopiedDocId] = useState<string | null>(null);
@@ -129,9 +135,9 @@ export const DocumentGridView: React.FC<DocumentGridViewProps> = ({
               )}
 
               {/* Tags */}
-              {doc.tags && doc.tags.length > 0 && !isCompact && (
-                <div className="flex flex-wrap gap-1 pt-0.5">
-                  {doc.tags.slice(0, 4).map((tag) => (
+              {!isCompact && (
+                <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                  {doc.tags && doc.tags.slice(0, 4).map((tag) => (
                     <button
                       key={tag}
                       type="button"
@@ -139,13 +145,28 @@ export const DocumentGridView: React.FC<DocumentGridViewProps> = ({
                         e.stopPropagation();
                         onTagClick?.(tag);
                       }}
-                      className="text-[9px] font-medium px-1.5 py-0.5 rounded border bg-amber-50/80 text-amber-900 border-amber-200 hover:bg-amber-100 transition-colors"
+                      className="text-[9px] font-medium px-1.5 py-0.5 rounded border bg-amber-50/80 text-amber-900 border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
+                      title={`Filter by tag #${tag}`}
                     >
                       #{tag}
                     </button>
                   ))}
-                  {doc.tags.length > 4 && (
+                  {doc.tags && doc.tags.length > 4 && (
                     <span className="text-[9px] text-slate-400">+{doc.tags.length - 4}</span>
+                  )}
+                  {onManageDocTags && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onManageDocTags(doc);
+                      }}
+                      className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 hover:bg-amber-100 hover:text-amber-900 border border-dashed border-slate-300 hover:border-amber-300 transition flex items-center gap-0.5 cursor-pointer"
+                      title="Add or manage custom tags"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                      <span>Tag</span>
+                    </button>
                   )}
                 </div>
               )}
@@ -188,6 +209,20 @@ export const DocumentGridView: React.FC<DocumentGridViewProps> = ({
                     <span>View</span>
                     <ExternalLink className="w-2.5 h-2.5" />
                   </button>
+                  {onDeleteDocument && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteDocument(doc);
+                      }}
+                      className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                      title="Delete document from vault"
+                      id={`grid-delete-doc-btn-${doc.id}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

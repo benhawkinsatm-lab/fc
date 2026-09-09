@@ -5,18 +5,23 @@ import {
   Scale, 
   FolderArchive, 
   CheckCircle2, 
-  AlertCircle 
+  AlertCircle,
+  Tag
 } from 'lucide-react';
 import { DocumentRecord } from '../../types';
 
 interface DocumentStatsRibbonProps {
   documents: DocumentRecord[];
   filteredCount: number;
+  totalUniqueTagsCount?: number;
+  onOpenTagFilter?: () => void;
 }
 
 export const DocumentStatsRibbon: React.FC<DocumentStatsRibbonProps> = ({
   documents,
   filteredCount,
+  totalUniqueTagsCount,
+  onOpenTagFilter,
 }) => {
   const total = documents.length;
   const withAnnexures = documents.filter(d => d.annexureNumber).length;
@@ -27,7 +32,7 @@ export const DocumentStatsRibbon: React.FC<DocumentStatsRibbonProps> = ({
   const verifiedRate = total > 0 ? Math.round(((swornCount + thirdPartyCount) / total) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
       {/* Total Documents */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-3">
         <div className="p-2 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100">
@@ -73,8 +78,29 @@ export const DocumentStatsRibbon: React.FC<DocumentStatsRibbonProps> = ({
         </div>
       </div>
 
+      {/* Custom Metadata Tags */}
+      <div 
+        className={`bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-3 ${
+          onOpenTagFilter ? 'cursor-pointer hover:border-amber-300 hover:bg-amber-50/20 transition' : ''
+        }`}
+        onClick={onOpenTagFilter}
+        title="Filter by custom metadata tags"
+      >
+        <div className="p-2 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
+          <Tag className="w-4 h-4" />
+        </div>
+        <div>
+          <div className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">
+            Metadata Tags
+          </div>
+          <div className="text-base font-bold text-slate-900 font-serif">
+            {totalUniqueTagsCount ?? 0} <span className="text-xs text-slate-500 font-sans font-normal">Active Tags</span>
+          </div>
+        </div>
+      </div>
+
       {/* Active Selection / Filter State */}
-      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-3">
+      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-3 col-span-2 sm:col-span-1">
         <div className="p-2 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
           <Scale className="w-4 h-4" />
         </div>

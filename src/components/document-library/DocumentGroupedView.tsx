@@ -16,7 +16,10 @@ import {
   MessageSquare,
   Receipt,
   Trophy,
-  Calendar
+  Calendar,
+  Plus,
+  Tag,
+  Trash2
 } from 'lucide-react';
 import { DocumentRecord, DocumentCategory } from '../../types';
 import { GroupByField } from './types';
@@ -27,6 +30,8 @@ interface DocumentGroupedViewProps {
   onToggleSelectDoc: (id: string) => void;
   onViewDocument: (doc: DocumentRecord) => void;
   onTagClick?: (tag: string) => void;
+  onManageDocTags?: (doc: DocumentRecord) => void;
+  onDeleteDocument?: (doc: DocumentRecord) => void;
   onSelectMultipleDocs?: (ids: string[], select: boolean) => void;
 }
 
@@ -36,6 +41,8 @@ export const DocumentGroupedView: React.FC<DocumentGroupedViewProps> = ({
   onToggleSelectDoc,
   onViewDocument,
   onTagClick,
+  onManageDocTags,
+  onDeleteDocument,
   onSelectMultipleDocs,
 }) => {
   const [groupBy, setGroupBy] = useState<GroupByField>('category');
@@ -45,6 +52,23 @@ export const DocumentGroupedView: React.FC<DocumentGroupedViewProps> = ({
   // Group the documents
   const groupedData = useMemo(() => {
     const map = new Map<string, DocumentRecord[]>();
+
+    if (groupBy === 'tag') {
+      documents.forEach(doc => {
+        if (!doc.tags || doc.tags.length === 0) {
+          const key = 'Untagged Exhibits';
+          if (!map.has(key)) map.set(key, []);
+          map.get(key)!.push(doc);
+        } else {
+          doc.tags.forEach(t => {
+            const key = `#${t}`;
+            if (!map.has(key)) map.set(key, []);
+            map.get(key)!.push(doc);
+          });
+        }
+      });
+      return Array.from(map.entries()).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+    }
 
     documents.forEach(doc => {
       let key = 'Other';
@@ -92,6 +116,7 @@ export const DocumentGroupedView: React.FC<DocumentGroupedViewProps> = ({
   };
 
   const getGroupIcon = (key: string) => {
+    if (groupBy === 'tag') return Tag;
     switch (key) {
       case 'Medical': return Stethoscope;
       case 'Education': return GraduationCap;
@@ -124,7 +149,7 @@ export const DocumentGroupedView: React.FC<DocumentGroupedViewProps> = ({
         <div className="flex items-center gap-2">
           <span className="text-slate-500 font-semibold">Group documents by:</span>
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-            {(['category', 'year', 'weight', 'origin'] as GroupByField[]).map((field) => (
+            {(['category', 'year', 'weight', 'origin', 'tag'] as GroupByField[]).map((field) => (
               <button
                 key={field}
                 type="button"
@@ -132,7 +157,7 @@ export const DocumentGroupedView: React.FC<DocumentGroupedViewProps> = ({
                   setGroupBy(field);
                   setCollapsedGroups(new Set());
                 }}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold capitalize transition ${
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold capitalize transition cursor-pointer ${
                   groupBy === field
                     ? 'bg-white text-slate-900 shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -286,6 +311,41 @@ export const DocumentGroupedView: React.FC<DocumentGroupedViewProps> = ({
                             <p className="text-[11px] text-slate-500 truncate max-w-xl italic font-serif">
                               "{doc.excerpt}"
                             </p>
+
+                            {/* Tags */}
+                            <div className="flex flex-wrap items-center gap-1 pt-1">
+                              {doc.tags && doc.tags.slice(0, 4).map((tag) => (
+                                <button
+                                  key={tag}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onTagClick?.(tag);
+                                  }}
+                                  className="text-[9px] font-medium px-1.5 py-0.2 rounded border bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
+                                  title={`Filter by tag #${tag}`}
+                                >
+                                  #{tag}
+                                </button>
+                              ))}
+                              {doc.tags && doc.tags.length > 4 && (
+                                <span className="text-[9px] text-slate-400">+{doc.tags.length - 4}</span>
+                              )}
+                              {onManageDocTags && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onManageDocTags(doc);
+                                  }}
+                                  className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 hover:bg-amber-100 hover:text-amber-900 border border-dashed border-slate-300 hover:border-amber-300 transition flex items-center gap-0.5 cursor-pointer"
+                                  title="Add or manage custom tags"
+                                >
+                                  <Plus className="w-2.5 h-2.5" />
+                                  <span>Tag</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -306,6 +366,20 @@ export const DocumentGroupedView: React.FC<DocumentGroupedViewProps> = ({
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </button>
+                          {onDeleteDocument && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteDocument(doc);
+                              }}
+                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                              title="Delete document from vault"
+                              id={`grouped-delete-doc-btn-${doc.id}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );

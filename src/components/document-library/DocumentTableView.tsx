@@ -19,7 +19,9 @@ import {
   MessageSquare, 
   Receipt, 
   Trophy,
-  Maximize2
+  Maximize2,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { DocumentRecord, DocumentCategory } from '../../types';
 import { DisplayDensity, SortField, SortDirection } from './types';
@@ -30,6 +32,8 @@ interface DocumentTableViewProps {
   onToggleSelectDoc: (id: string) => void;
   onViewDocument: (doc: DocumentRecord) => void;
   onTagClick?: (tag: string) => void;
+  onManageDocTags?: (doc: DocumentRecord) => void;
+  onDeleteDocument?: (doc: DocumentRecord) => void;
   density: DisplayDensity;
   sortField: SortField;
   sortDirection: SortDirection;
@@ -42,6 +46,8 @@ export const DocumentTableView: React.FC<DocumentTableViewProps> = ({
   onToggleSelectDoc,
   onViewDocument,
   onTagClick,
+  onManageDocTags,
+  onDeleteDocument,
   density,
   sortField,
   sortDirection,
@@ -256,9 +262,9 @@ export const DocumentTableView: React.FC<DocumentTableViewProps> = ({
                           </div>
                         )}
                         {/* Tags */}
-                        {doc.tags && doc.tags.length > 0 && !isCompact && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {doc.tags.slice(0, 3).map(t => (
+                        {!isCompact && (
+                          <div className="flex flex-wrap items-center gap-1 mt-1">
+                            {doc.tags && doc.tags.length > 0 && doc.tags.slice(0, 3).map(t => (
                               <button
                                 key={t}
                                 type="button"
@@ -266,13 +272,28 @@ export const DocumentTableView: React.FC<DocumentTableViewProps> = ({
                                   e.stopPropagation();
                                   onTagClick?.(t);
                                 }}
-                                className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100"
+                                className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100 cursor-pointer"
+                                title={`Filter by #${t}`}
                               >
                                 #{t}
                               </button>
                             ))}
-                            {doc.tags.length > 3 && (
+                            {doc.tags && doc.tags.length > 3 && (
                               <span className="text-[9px] text-slate-400">+{doc.tags.length - 3}</span>
+                            )}
+                            {onManageDocTags && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onManageDocTags(doc);
+                                }}
+                                className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 hover:bg-amber-100 hover:text-amber-900 border border-dashed border-slate-300 hover:border-amber-300 transition flex items-center gap-0.5 cursor-pointer"
+                                title="Add or manage custom tags on this exhibit"
+                              >
+                                <Plus className="w-2.5 h-2.5" />
+                                <span>Tag</span>
+                              </button>
                             )}
                           </div>
                         )}
@@ -327,6 +348,20 @@ export const DocumentTableView: React.FC<DocumentTableViewProps> = ({
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </button>
+                          {onDeleteDocument && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteDocument(doc);
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                              title="Delete Document from Vault"
+                              id={`delete-doc-btn-${doc.id}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -367,16 +402,37 @@ export const DocumentTableView: React.FC<DocumentTableViewProps> = ({
                               </div>
                             </div>
 
-                            {doc.tags && doc.tags.length > 0 && (
-                              <div className="flex items-center gap-2 flex-wrap text-xs">
+                            <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-slate-400 text-[10px] font-bold uppercase">Associated Tags:</span>
-                                {doc.tags.map(t => (
-                                  <span key={t} className="px-2 py-0.5 rounded bg-slate-800 text-amber-300 text-[10px] border border-slate-700">
-                                    #{t}
-                                  </span>
-                                ))}
+                                {doc.tags && doc.tags.length > 0 ? (
+                                  doc.tags.map(t => (
+                                    <button
+                                      key={t}
+                                      type="button"
+                                      onClick={() => onTagClick?.(t)}
+                                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] border border-slate-700 transition cursor-pointer"
+                                      title={`Filter by tag #${t}`}
+                                    >
+                                      #{t}
+                                    </button>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-slate-500 italic">No tags assigned</span>
+                                )}
                               </div>
-                            )}
+                              {onManageDocTags && (
+                                <button
+                                  type="button"
+                                  onClick={() => onManageDocTags(doc)}
+                                  className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                                  id={`manage-tags-drawer-btn-${doc.id}`}
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>Manage Custom Tags</span>
+                                </button>
+                              )}
+                            </div>
 
                             <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
                               <span className="text-slate-400 text-[11px]">
@@ -399,6 +455,17 @@ export const DocumentTableView: React.FC<DocumentTableViewProps> = ({
                                   <Maximize2 className="w-3 h-3" />
                                   <span>Open Full Record Viewer</span>
                                 </button>
+                                {onDeleteDocument && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onDeleteDocument(doc)}
+                                    className="px-2.5 py-1 bg-rose-900/60 hover:bg-rose-900 border border-rose-700 text-rose-200 rounded text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                                    id={`drawer-delete-doc-btn-${doc.id}`}
+                                  >
+                                    <Trash2 className="w-3 h-3 text-rose-400" />
+                                    <span>Delete Document</span>
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>

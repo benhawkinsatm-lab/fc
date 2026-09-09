@@ -48,6 +48,16 @@ import { DocumentLibrary } from './components/DocumentLibrary';
 import { DocumentDetailModal } from './components/DocumentDetailModal';
 import { DocumentIngestionModal } from './components/DocumentIngestionModal';
 import { SelfHostedStorageModal } from './components/SelfHostedStorageModal';
+import { DeleteDocumentWarningModal } from './components/document-library/DeleteDocumentWarningModal';
+import { UndoDeletionToast } from './components/document-library/UndoDeletionToast';
+import {
+  inspectDocumentDependencies,
+  executeCascadingDocumentDeletion,
+  restoreDeletionSnapshot,
+  DocumentDependencyDetail,
+  DeletionUndoSnapshot
+} from './utils/documentDependencyService';
+import { Trash2, X, CheckCircle2, RotateCcw } from 'lucide-react';
 import {
   CaseDataStore,
   fetchSelfHostedState,
@@ -79,6 +89,13 @@ export default function App() {
   const [isIngestionOpen, setIsIngestionOpen] = useState<boolean>(false);
   const [chatInitialQuery, setChatInitialQuery] = useState<string>('');
   const [binderPreselectedIds, setBinderPreselectedIds] = useState<string[] | undefined>(undefined);
+
+  // Document Deletion & Cascade Warning States
+  const [docsPendingDeletion, setDocsPendingDeletion] = useState<DocumentRecord[] | null>(null);
+  const [deletionDependencies, setDeletionDependencies] = useState<DocumentDependencyDetail[] | null>(null);
+  const [isDeletingRecords, setIsDeletingRecords] = useState<boolean>(false);
+  const [activeUndoSnapshot, setActiveUndoSnapshot] = useState<DeletionUndoSnapshot | null>(null);
+  const [restoredNotification, setRestoredNotification] = useState<{ message: string; submessage?: string } | null>(null);
 
   // Initialize and load from self-hosted disk on mount
   useEffect(() => {
@@ -275,6 +292,113 @@ export default function App() {
 
   const handleDocumentAdded = (newDoc: DocumentRecord) => {
     setDocuments(prev => [newDoc, ...prev]);
+  };
+
+  // Deletion Request & Cascading Execution Handlers
+  const handleRequestDeleteDocuments = (docsToDelete: DocumentRecord[]) => {
+    if (!docsToDelete || docsToDelete.length === 0) return;
+    const deps = inspectDocumentDependencies(docsToDelete, {
+      documents,
+      timeline,
+      orders,
+      discrepancies,
+      communicationMessages,
+      responseRequirements,
+      courtCriteria,
+      issuesConcerns,
+      partyProfiles,
+      proposedOrders,
+    });
+    setDocsPendingDeletion(docsToDelete);
+    setDeletionDependencies(deps);
+  };
+
+  const handleConfirmDeleteDocuments = () => {
+    if (!docsPendingDeletion || docsPendingDeletion.length === 0) return;
+    setIsDeletingRecords(true);
+
+    const docIds = docsPendingDeletion.map(d => d.id);
+    const result = executeCascadingDocumentDeletion(docIds, {
+      documents,
+      timeline,
+      orders,
+      discrepancies,
+      communicationMessages,
+      responseRequirements,
+      courtCriteria,
+      issuesConcerns,
+      partyProfiles,
+      proposedOrders,
+    });
+
+    // Update state collections from updatedState
+    setDocuments(result.updatedState.documents);
+    setTimeline(result.updatedState.timeline);
+    setOrders(result.updatedState.orders);
+    setDiscrepancies(result.updatedState.discrepancies);
+    setCommunicationMessages(result.updatedState.communicationMessages);
+    setResponseRequirements(result.updatedState.responseRequirements);
+    setCourtCriteria(result.updatedState.courtCriteria);
+    setIssuesConcerns(result.updatedState.issuesConcerns);
+    setPartyProfiles(result.updatedState.partyProfiles);
+    setProposedOrders(result.updatedState.proposedOrders);
+
+    // If currently viewing one of the deleted docs in modal, close it
+    if (selectedDocument && docIds.includes(selectedDocument.id)) {
+      setSelectedDocument(null);
+    }
+
+    // Set active undo snapshot for the grace period
+    setActiveUndoSnapshot(result.undoSnapshot);
+    setRestoredNotification(null);
+
+    setDocsPendingDeletion(null);
+    setDeletionDependencies(null);
+    setIsDeletingRecords(false);
+  };
+
+  const handleUndoDeletion = (snapshotToUndo: DeletionUndoSnapshot) => {
+    const { restoredState } = restoreDeletionSnapshot(snapshotToUndo);
+
+    // Restore state collections
+    setDocuments(restoredState.documents);
+    setTimeline(restoredState.timeline);
+    setOrders(restoredState.orders);
+    setDiscrepancies(restoredState.discrepancies);
+    setCommunicationMessages(restoredState.communicationMessages);
+    setResponseRequirements(restoredState.responseRequirements);
+    setCourtCriteria(restoredState.courtCriteria);
+    setIssuesConcerns(restoredState.issuesConcerns);
+    setPartyProfiles(restoredState.partyProfiles);
+    setProposedOrders(restoredState.proposedOrders);
+
+    // Dismiss active undo
+    setActiveUndoSnapshot(null);
+
+    // Display restoration confirmation
+    const docCount = snapshotToUndo.deletedDocIds.length;
+    const docTitles = snapshotToUndo.deletedDocTitles.slice(0, 2).join(', ');
+    const extraDocs = snapshotToUndo.deletedDocTitles.length > 2
+      ? ` and ${snapshotToUndo.deletedDocTitles.length - 2} more`
+      : '';
+    const cascadeCount = snapshotToUndo.summary.totalCascadeCount;
+
+    setRestoredNotification({
+      message: `Restored ${docCount} document(s) (${docTitles}${extraDocs}) to the evidentiary vault.`,
+      submessage: cascadeCount > 0
+        ? `Reinstated ${cascadeCount} associated items (timeline entries, contradictions, notes, and criteria links).`
+        : 'All records restored to original status.'
+    });
+
+    setTimeout(() => {
+      setRestoredNotification(null);
+    }, 6000);
+  };
+
+  const handleCancelDeleteDocuments = () => {
+    setDocsPendingDeletion(null);
+    setDeletionDependencies(null);
+    setIsDeletingRecords(false);
   };
 
   const handleQuickQuerySubmit = (query: string) => {
@@ -484,6 +608,7 @@ export default function App() {
             orders={orders}
             discrepancies={discrepancies}
             courtCriteria={courtCriteria}
+            onUpdateDocuments={handleUpdateDocuments}
           />
         )}
 
@@ -495,6 +620,8 @@ export default function App() {
             onUpdateDocuments={handleUpdateDocuments}
             onOpenBinderWithSubset={handleOpenBinderWithSubset}
             onNavigateToResponseTracker={() => setActiveTab('responses')}
+            onDeleteDocument={(doc) => handleRequestDeleteDocuments([doc])}
+            onDeleteDocuments={handleRequestDeleteDocuments}
           />
         )}
       </main>
@@ -503,7 +630,57 @@ export default function App() {
       <DocumentDetailModal
         document={selectedDocument}
         onClose={() => setSelectedDocument(null)}
+        onDelete={(doc) => handleRequestDeleteDocuments([doc])}
       />
+
+      {/* Delete Document Cascade Warning & Confirmation Modal */}
+      {deletionDependencies && deletionDependencies.length > 0 && (
+        <DeleteDocumentWarningModal
+          dependencies={deletionDependencies}
+          onConfirm={handleConfirmDeleteDocuments}
+          onClose={handleCancelDeleteDocuments}
+          isDeleting={isDeletingRecords}
+        />
+      )}
+
+      {/* Undo Deletion Toast with Grace Period */}
+      {activeUndoSnapshot && (
+        <UndoDeletionToast
+          snapshot={activeUndoSnapshot}
+          onUndo={handleUndoDeletion}
+          onDismiss={() => setActiveUndoSnapshot(null)}
+        />
+      )}
+
+      {/* Restoration Success Feedback Banner */}
+      {restoredNotification && (
+        <div 
+          className="fixed bottom-6 right-6 z-50 max-w-md bg-slate-950 text-white rounded-2xl shadow-2xl border border-emerald-500/50 p-4 flex items-start gap-3 animate-in slide-in-from-bottom-5 duration-200"
+          id="restoration-toast-notification"
+          role="status"
+        >
+          <div className="p-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl shrink-0 mt-0.5">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div className="text-xs flex-1">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-emerald-300 uppercase tracking-wider text-[10px]">Restored to Vault</span>
+            </div>
+            <div className="font-bold text-slate-100 mt-0.5">{restoredNotification.message}</div>
+            {restoredNotification.submessage && (
+              <div className="text-slate-300 mt-1 text-[11px] leading-relaxed">{restoredNotification.submessage}</div>
+            )}
+          </div>
+          <button 
+            onClick={() => setRestoredNotification(null)}
+            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+            id="close-restoration-toast-btn"
+            title="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       <DocumentIngestionModal
         isOpen={isIngestionOpen}

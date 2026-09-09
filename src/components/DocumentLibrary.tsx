@@ -12,7 +12,8 @@ import {
   CheckSquare, 
   Square,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Trash2
 } from 'lucide-react';
 import { DocumentRecord, DocumentCategory, EvidentiaryWeight } from '../types';
 import { METADATA_CATEGORIES } from './DocumentIngestionModal';
@@ -31,6 +32,7 @@ import { DocumentSplitView } from './document-library/DocumentSplitView';
 import { DocumentGroupedView } from './document-library/DocumentGroupedView';
 import { DocumentGridView } from './document-library/DocumentGridView';
 import { DocumentPagination } from './document-library/DocumentPagination';
+import { DocumentTagManagerModal } from './document-library/DocumentTagManagerModal';
 
 interface DocumentLibraryProps {
   documents: DocumentRecord[];
@@ -39,6 +41,8 @@ interface DocumentLibraryProps {
   onUpdateDocuments?: (updatedDocs: DocumentRecord[]) => void;
   onOpenBinderWithSubset?: (docIds: string[]) => void;
   onNavigateToResponseTracker?: () => void;
+  onDeleteDocument?: (doc: DocumentRecord) => void;
+  onDeleteDocuments?: (docs: DocumentRecord[]) => void;
 }
 
 export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
@@ -48,6 +52,8 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
   onUpdateDocuments,
   onOpenBinderWithSubset,
   onNavigateToResponseTracker,
+  onDeleteDocument,
+  onDeleteDocuments,
 }) => {
   // View Formats & Layout state
   const [viewMode, setViewMode] = useState<DocumentViewMode>('table');
@@ -68,9 +74,14 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
     category: 'All',
     weight: 'All',
     tag: null,
+    selectedTags: [],
+    tagFilterMode: 'any',
     origin: 'All',
     year: 'All',
   });
+
+  // Modal State for Individual Document Tag Manager
+  const [tagManagerDoc, setTagManagerDoc] = useState<DocumentRecord | null>(null);
 
   // Bulk Selection State
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
@@ -121,8 +132,24 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
       category: 'All',
       weight: 'All',
       tag: null,
+      selectedTags: [],
+      tagFilterMode: 'any',
       origin: 'All',
       year: 'All',
+    });
+    setCurrentPage(1);
+  };
+
+  const handleTagClick = (tag: string) => {
+    setFilters(prev => {
+      const current = prev.selectedTags || (prev.tag ? [prev.tag] : []);
+      const exists = current.some(t => t.toLowerCase() === tag.toLowerCase());
+      const next = exists ? current : [...current, tag];
+      return {
+        ...prev,
+        selectedTags: next,
+        tag: next[0] || null
+      };
     });
     setCurrentPage(1);
   };
@@ -155,6 +182,68 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
     });
     return Array.from(tagSet).sort();
   }, [documents]);
+
+  // Tag frequency counts across all documents
+  const tagCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    documents.forEach(d => {
+      if (d.tags && Array.isArray(d.tags)) {
+        d.tags.forEach(t => {
+          if (t && t.trim()) {
+            const clean = t.trim();
+            counts[clean] = (counts[clean] || 0) + 1;
+          }
+        });
+      }
+    });
+    return counts;
+  }, [documents]);
+
+  // Handler to persist edited tags from DocumentTagManagerModal
+  const handleSaveDocTags = (updatedDoc: DocumentRecord) => {
+    if (!onUpdateDocuments) return;
+    const updated = documents.map(d => d.id === updatedDoc.id ? updatedDoc : d);
+    onUpdateDocuments(updated);
+    setTagManagerDoc(null);
+    setFeedbackMsg(`Updated custom metadata tags for "${updatedDoc.title}"`);
+  };
+
+  // Quick inline tag addition
+  const handleAddTagToDoc = (docId: string, tagToAdd: string) => {
+    if (!onUpdateDocuments) return;
+    const clean = tagToAdd.trim();
+    if (!clean) return;
+    const updated = documents.map(d => {
+      if (d.id === docId) {
+        const currentTags = d.tags || [];
+        if (currentTags.some(t => t.toLowerCase() === clean.toLowerCase())) {
+          return d;
+        }
+        return { ...d, tags: [...currentTags, clean] };
+      }
+      return d;
+    });
+    onUpdateDocuments(updated);
+    setFeedbackMsg(`Added tag #${clean}`);
+  };
+
+  // Quick inline tag removal
+  const handleRemoveTagFromDoc = (docId: string, tagToRemove: string) => {
+    if (!onUpdateDocuments) return;
+    const clean = tagToRemove.trim();
+    const updated = documents.map(d => {
+      if (d.id === docId) {
+        const currentTags = d.tags || [];
+        return {
+          ...d,
+          tags: currentTags.filter(t => t.toLowerCase() !== clean.toLowerCase())
+        };
+      }
+      return d;
+    });
+    onUpdateDocuments(updated);
+    setFeedbackMsg(`Removed tag #${clean}`);
+  };
 
   // Extract all unique source origins
   const allUniqueOrigins = useMemo(() => {
@@ -201,8 +290,21 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
       if (filters.origin !== 'All' && doc.sourceOrigin !== filters.origin) return false;
       if (filters.year !== 'All' && !doc.date.startsWith(filters.year)) return false;
 
-      // Tag filter
-      if (filters.tag) {
+      // Multi-tag & single-tag filtering with any/all match mode
+      if (filters.selectedTags && filters.selectedTags.length > 0) {
+        const mode = filters.tagFilterMode || 'any';
+        if (mode === 'all') {
+          const hasAll = filters.selectedTags.every(reqTag => 
+            doc.tags?.some(t => t.toLowerCase() === reqTag.toLowerCase())
+          );
+          if (!hasAll) return false;
+        } else {
+          const hasAny = filters.selectedTags.some(reqTag => 
+            doc.tags?.some(t => t.toLowerCase() === reqTag.toLowerCase())
+          );
+          if (!hasAny) return false;
+        }
+      } else if (filters.tag) {
         const hasTag = doc.tags?.some(t => t.toLowerCase() === filters.tag?.toLowerCase());
         if (!hasTag) return false;
       }
@@ -446,6 +548,8 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
       <DocumentStatsRibbon
         documents={documents}
         filteredCount={filteredDocs.length}
+        totalUniqueTagsCount={allUniqueTags.length}
+        onOpenTagFilter={() => setShowFilterDrawer(true)}
       />
 
       {/* High-Volume Navigation & Filter Toolbar */}
@@ -462,6 +566,7 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
         onSortFieldChange={handleSortFieldChange}
         onToggleSortDirection={handleToggleSortDirection}
         allUniqueTags={allUniqueTags}
+        tagCounts={tagCounts}
         allUniqueOrigins={allUniqueOrigins}
         allUniqueYears={allUniqueYears}
         categoryCounts={categoryCounts}
@@ -526,7 +631,9 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
             selectedDocIds={selectedDocIds}
             onToggleSelectDoc={toggleSelectDoc}
             onViewDocument={onViewDocument}
-            onTagClick={(tag) => handleFilterChange({ tag })}
+            onTagClick={handleTagClick}
+            onManageDocTags={setTagManagerDoc}
+            onDeleteDocument={onDeleteDocument}
             density={density}
             sortField={sortField}
             sortDirection={sortDirection}
@@ -540,7 +647,11 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
             selectedDocIds={selectedDocIds}
             onToggleSelectDoc={toggleSelectDoc}
             onViewDocument={onViewDocument}
-            onTagClick={(tag) => handleFilterChange({ tag })}
+            onTagClick={handleTagClick}
+            onManageDocTags={setTagManagerDoc}
+            onAddTagToDoc={handleAddTagToDoc}
+            onRemoveTagFromDoc={handleRemoveTagFromDoc}
+            onDeleteDocument={onDeleteDocument}
           />
         )}
 
@@ -550,7 +661,9 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
             selectedDocIds={selectedDocIds}
             onToggleSelectDoc={toggleSelectDoc}
             onViewDocument={onViewDocument}
-            onTagClick={(tag) => handleFilterChange({ tag })}
+            onTagClick={handleTagClick}
+            onManageDocTags={setTagManagerDoc}
+            onDeleteDocument={onDeleteDocument}
             onSelectMultipleDocs={handleSelectMultipleDocs}
           />
         )}
@@ -561,7 +674,9 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
             selectedDocIds={selectedDocIds}
             onToggleSelectDoc={toggleSelectDoc}
             onViewDocument={onViewDocument}
-            onTagClick={(tag) => handleFilterChange({ tag })}
+            onTagClick={handleTagClick}
+            onManageDocTags={setTagManagerDoc}
+            onDeleteDocument={onDeleteDocument}
             density={density}
           />
         )}
@@ -744,6 +859,29 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
                 <FolderArchive className="w-4 h-4 text-slate-950" />
                 <span>Generate Evidence Binder Subset ({selectedDocIds.size})</span>
               </button>
+
+              {/* Bulk Delete Action */}
+              {(onDeleteDocuments || onDeleteDocument) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const docsToDelete = documents.filter(d => selectedDocIds.has(d.id));
+                    if (docsToDelete.length > 0) {
+                      if (onDeleteDocuments) {
+                        onDeleteDocuments(docsToDelete);
+                      } else if (onDeleteDocument) {
+                        onDeleteDocument(docsToDelete[0]);
+                      }
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-rose-950/90 hover:bg-rose-900 border border-rose-800 text-rose-200 hover:text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+                  id="bulk-delete-btn"
+                  title={`Delete ${selectedDocIds.size} selected document(s) from vault`}
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Delete ({selectedDocIds.size})</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -757,6 +895,17 @@ export const DocumentLibrary: React.FC<DocumentLibraryProps> = ({
         onOpenInBinder={onOpenBinderWithSubset}
         onViewDocument={onViewDocument}
       />
+
+      {/* Document Custom Metadata Tag Manager Modal */}
+      {tagManagerDoc && (
+        <DocumentTagManagerModal
+          isOpen={Boolean(tagManagerDoc)}
+          onClose={() => setTagManagerDoc(null)}
+          document={tagManagerDoc}
+          allLibraryTags={allUniqueTags}
+          onSaveTags={handleSaveDocTags}
+        />
+      )}
     </div>
   );
 };
